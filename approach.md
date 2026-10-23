@@ -92,3 +92,24 @@ A scanned PDF with no extractable text may produce no usable sections. The appli
 - Add real LLM integration, bounded retries, and idempotent generation.
 - Detect critical threshold and safety-instruction changes.
 - Expand automated and end-to-end testing.
+
+## QA Generation: Validation and Limitations
+
+The QA generation module uses Pydantic models to validate the structure of its output. Each test idea must have a non-empty title, at least one step, and a non-empty expected result. The response must contain between three and five test ideas.
+
+The current implementation is a deterministic mock generator. It uses the selected manual text to provide context for a placeholder test and validates the final structure. It does not invoke an external LLM because API credentials are unavailable.
+
+### Failure Handling
+
+- Empty or whitespace-only source text raises a `ValueError`.
+- Invalid structured output is rejected by Pydantic validation.
+- Automated tests cover empty input, whitespace input, result count, and required output fields.
+
+### Known Gaps
+
+- A live LLM provider is not integrated.
+- Automatic retry of malformed LLM responses is not implemented.
+- The mock output is not proof of actual AI-generated test coverage.
+- Production deployment would require a provider adapter, secure API-key configuration, bounded retries, and tests for provider failures.
+
+This limitation is documented rather than presenting mock output as real LLM output.

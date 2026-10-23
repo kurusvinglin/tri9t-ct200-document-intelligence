@@ -76,3 +76,26 @@ The parser uses heading heuristics and may not reliably reconstruct every table,
 - Strengthen logical node matching across document versions.
 - Add more regression and end-to-end tests.
 - Improve detection of clinically significant changes.
+
+## QA Test Generation
+
+The API generates structured QA test ideas from a selected section of a specific manual version. Each test includes a title, steps, and an expected result.
+
+The current implementation uses a deterministic mock generator with Pydantic validation. It does not call a real AI language model because no API key is configured.
+
+### Validation
+- Rejects empty input.
+- Requires 3 to 5 test ideas.
+- Validates the title, steps, and expected result of each test.
+- Includes automated tests for empty input and output structure.
+
+### Known Limitations
+- Real LLM integration is not implemented.
+- Retrying malformed LLM responses is not implemented.
+- The generated examples are placeholders and must not be represented as real LLM-generated results.
+
+### Run Tests
+
+```bash
+python -m pytest -v
+```
