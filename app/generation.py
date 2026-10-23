@@ -1,5 +1,24 @@
+from openai import (
+    OpenAI,
+    APIError,
+    RateLimitError,
+    APIConnectionError,
+    AuthenticationError,
+)
 
+
+import os
+import time
+
+from dotenv import load_dotenv
+from openai import OpenAI
+from openai import APIError, RateLimitError, APIConnectionError
 from pydantic import BaseModel, Field, ValidationError
+
+
+load_dotenv()
+
+MAX_ATTEMPTS = 3
 
 
 class QATestIdea(BaseModel):
@@ -13,53 +32,83 @@ class QAGenerationResult(BaseModel):
 
 
 def generate_qa_tests(section_text: str) -> QAGenerationResult:
-    """
-    Generate placeholder QA tests.
+    """Generate and validate QA tests using a real OpenAI model."""
 
-    IMPORTANT:
-    This is a deterministic mock generator, not a live LLM.
-    The assignment's real LLM integration remains a limitation.
-    """
     if not section_text or not section_text.strip():
         raise ValueError("Section text cannot be empty")
 
-    # Use the selected manual text as the subject of the examples.
-    excerpt = " ".join(section_text.split())[:160]
+    api_key = os.getenv("OPENAI_API_KEY")
+    model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 
-    result = QAGenerationResult(
-        tests=[
-            QATestIdea(
-                title="Verify documented instructions",
-                steps=[
-                    f"Review this selected manual text: {excerpt}",
-                    "Follow the applicable documented procedure"
-                ],
-                expected_result=(
-                    "The procedure is consistent with the selected manual text."
-                )
-            ),
-            QATestIdea(
-                title="Verify safety information",
-                steps=[
-                    "Identify any safety precautions in the selected text",
-                    "Check that the applicable precautions are followed"
-                ],
-                expected_result=(
-                    "Applicable documented safety precautions are followed."
-                )
-            ),
-            QATestIdea(
-                title="Verify expected device behavior",
-                steps=[
-                    "Identify the device behavior described in the selected text",
-                    "Compare the expected behavior with the documented instructions"
-                ],
-                expected_result=(
-                    "The expected behavior is consistent with the selected text."
-                )
-            )
-        ]
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not configured")
+
+    client = OpenAI(
+        api_key=api_key,
+        max_retries=0,
+        timeout=30.0,
     )
 
-    # Explicitly validate the final structured result.
-    return QAGenerationResult.model_validate(result.model_dump())
+    last_error = None
+
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            response = client.responses.parse(
+                model=model,
+                input=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a software QA engineer. Generate "
+                            "3 to 5 practical test ideas based ONLY on "
+                            "the supplied manual text. Do not invent "
+                            "device specifications or safety thresholds. "
+                            "Each test must have a title, steps, and "
+                            "expected_result. If the text does not support "
+                            "a detail, state that it needs verification."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            "Create QA test ideas from this manual excerpt:\n\n"
+                            + section_text[:12000]
+                        ),
+                    },
+                ],
+                text_format=QAGenerationResult,
+            )
+
+            result = response.output_parsed
+
+            if result is None:
+                raise ValueError(
+                    "The model returned no parsed structured output"
+                )
+
+            # Validate once more before returning.
+            return QAGenerationResult.model_validate(
+                result.model_dump()
+            )
+
+        
+        except AuthenticationError as exc:
+            raise RuntimeError(
+                "OpenAI authentication failed. Check your API key "
+                "in the .env file."
+            ) from exc
+
+        except (ValidationError, ValueError) as exc:
+            last_error = exc
+
+        except (RateLimitError, APIConnectionError, APIError) as exc:
+            last_error = exc
+
+        if attempt < MAX_ATTEMPTS:
+            time.sleep(attempt)
+
+
+    raise RuntimeError(
+        f"QA generation failed after {MAX_ATTEMPTS} attempts: "
+        f"{type(last_error).__name__}: {last_error}"
+    ) from last_error
